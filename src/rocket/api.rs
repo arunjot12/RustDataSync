@@ -1,26 +1,28 @@
 use crate::{
-    delete_blockchain, establish_connection, establish_ws_connection,
-    models::Blockchain, rocket::cors::CORS, schema::blockchain_info::dsl::*,
+    delete_blockchain, establish_connection, establish_ws_connection, models::Blockchain,
+    rocket::cors::CORS, schema::blockchain_info::dsl::*, store_blockchain,
 };
 use diesel::RunQueryDsl;
 use rocket::{
-    get, post, routes,
+    get,
     http::Status,
-    serde::{json::{Json, Value}, Deserialize, Serialize},
+    post, routes,
+    serde::{
+        Deserialize, Serialize,
+        json::{Json, Value},
+    },
 };
 use serde_json::json;
 
-
 #[derive(Serialize, Deserialize)]
-pub struct Id{
-    id:i32
+pub struct Id {
+    id: i32,
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct Wss{
-    endpoint:String
+pub struct Wss {
+    endpoint: String,
 }
-
 
 /// Returns all blockchain data stored in the database
 #[get("/get_all_blockchains")]
@@ -40,8 +42,10 @@ pub async fn verify_wss(input: Json<Wss>) -> Result<Json<Value>, Status> {
     match establish_ws_connection(&input.endpoint).await {
         Ok(_) => {
             println!("✅ Connection Established! 🎉");
-            Ok(Json(json!({ "status": "success", "message": "Connection Established!" })))
-        },
+            Ok(Json(
+                json!({ "status": "success", "message": "Connection Established!" }),
+            ))
+        }
         Err(error) => {
             println!("❌ {}", error);
             Err(Status::InternalServerError)
@@ -49,16 +53,32 @@ pub async fn verify_wss(input: Json<Wss>) -> Result<Json<Value>, Status> {
     }
 }
 
+#[post("/blockchain_details",data = "<input>")]
+pub async fn store_blockchain_details(input:Json<String>)> Result<Json<Value>, Status>{
+   match store_blockchain(input.to_string()).await{
+    Ok(_) => {
+        println!("✅ Data Stored");
+        Ok(Json(
+            json!({ "status": "success", "message": "Data Stored!" }),
+        ))
+    }
+    Err(error) => {
+        println!("❌ {}", error);
+        Err(Status::InternalServerError)
+    }
+   }
+}
+
 /// Returns all blockchain data stored in the database
 #[post("/delete_blockchains", data = "<input>")]
-pub fn api_delete_blockchain(input: Json<Id>) ->  &'static str {
+pub fn api_delete_blockchain(input: Json<Id>) -> &'static str {
     delete_blockchain(input.id);
     "Blockchain deleted successfully"
 }
 
 /// Configure and mount the Rocket routes
 pub fn rocket_routes() -> Vec<rocket::Route> {
-    routes![get_all_blockchains,api_delete_blockchain,verify_wss]
+    routes![get_all_blockchains, api_delete_blockchain, verify_wss]
 }
 
 // Rocket server launch configuration
@@ -70,4 +90,3 @@ pub async fn rocket_launch() {
         .launch()
         .await;
 }
-

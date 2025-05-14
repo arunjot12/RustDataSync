@@ -1,12 +1,15 @@
-use jsonrpsee::{core::client::ClientT, ws_client::WsClient};
 use scale_codec::{Decode, Encode, MaxEncodedLen};
 use serde::{Deserialize, Serialize};
+use std::fmt::Debug;
 use substrate_api_client::{
-    Api, GetStorage,
-    ac_primitives::DefaultRuntimeConfig,
-    rpc::JsonrpseeClient,
+    Api, GetStorage, ac_primitives::DefaultRuntimeConfig, rpc::JsonrpseeClient,
 };
+use jsonrpsee::{core::client::ClientT, ws_client::WsClient};
+use subxt::{OnlineClient, PolkadotConfig};
 
+// #[derive(Clone)]
+#[subxt::subxt(runtime_metadata_path = "5irechain.scale")]
+pub mod firechain {}
 
 #[derive(
     Copy,
@@ -47,13 +50,51 @@ pub async fn current_validators(endpoint: &str) -> Vec<AccountId20> {
     validators.unwrap()
 }
 
-/// Fetch the current blockchain name
-pub async fn get_current_block(endpoint: &str) -> u32 {
-    let client = JsonrpseeClient::new(endpoint).await.expect("REASON");
-    let api = Api::<DefaultRuntimeConfig, _>::new(client).await.unwrap();
-    let current_block_number = api
-        .get_storage::<u32>("System", "Number", None)
+pub async fn get_block_details(endpoint: &str) {
+    let api = OnlineClient::<PolkadotConfig>::from_url(endpoint)
         .await
-        .unwrap();
-    current_block_number.unwrap()
+        .expect("Api not Supported");
+
+    // Subscribe to new finalized blocks
+    let mut blocks_sub = api.blocks().subscribe_finalized().await.expect("msg");
+
+    println!("Listening to finalized blocks and printing events...\n");
+
+    while let Some(block) = blocks_sub.next().await {
+        let block = block.expect("msg");
+        let block_number = block.number();
+        println!("\n📦 Block #{block_number}");
+
+        let extrinsics = block.extrinsics().await.unwrap();
+        let transaction_length = extrinsics.len();
+
+        let events = block.events().await.expect("2");
+
+        for event in events.iter() {
+            match event {
+                Ok(ev) => {
+                    let pallet = ev.pallet_name();
+                    let variant = ev.variant_name();
+                    println!("🎯 Event: {pallet}::{variant}");
+                    println!("transaction_length first {:?}", transaction_length);
+
+                    // Now try parsing the transfer event
+                    if let Ok(Some(transfer)) =
+                        ev.as_event::<firechain::balances::events::Transfer>()
+                    {
+                        println!(
+                            "{:?} transfered {:?} to {:?} \n Transaction Length {:?}",
+                            transfer.from.to_string(),
+                            transfer.amount,
+                            transfer.to.to_string(),
+                            transaction_length
+                        );
+                    }
+                }
+                Err(e) => {
+                    println!("⚠️ Failed to decode event: {e:?}");
+                }
+            }
+        }
+    }
 }
